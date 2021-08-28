@@ -1,25 +1,31 @@
 from __future__ import annotations
 
-from inspect import iscoroutinefunction
+import inspect
 
 from typing import (
     Any,
     Awaitable,
     Callable,
+    Collection,
     Dict,
     Generic,
     List,
     Optional,
-    Sequence,
     Tuple,
     TYPE_CHECKING,
     TypeVar,
 )
 
+from .parser import Parser
+from .temporary import Message, _temporary_dispatch
+
 R = TypeVar('R')
 
 if TYPE_CHECKING:
     from typing_extensions import Concatenate, ParamSpec
+
+    from .core import Bot
+    from .parser import StringReader
 
     P = ParamSpec('P')
     CommandCallback = Callable[Concatenate['Context', P], Awaitable[R]]
@@ -28,11 +34,7 @@ else:
     P = TypeVar('P')
 
 
-def _temporary_dispatch(event: str, *args, **kwargs) -> None:
-    print(f'[DISPATCH {event}] args: {args} kwargs: {kwargs}')
-
-
-class Command(Generic[P, R]):
+class Command(Parser, Generic[P, R]):
     """Represents a command.
 
     Attributes
@@ -41,8 +43,9 @@ class Command(Generic[P, R]):
         The name of this command.
     aliases: List[str]
         A list of aliases for this command.
-    callback: Callable
-        The callback for when this command is invoked.
+    usage: str
+        The custom usage string for this command, or ``None``.
+        See :attr:`~.Command.signature` for an auto-generated version.
     error_callback: Optional[Callable[[:class:`~.Context`, Exception], Any]]
         The callback for when an error is raise during command invokation.
         This could be ``None``.
@@ -53,21 +56,79 @@ class Command(Generic[P, R]):
         callback: CommandCallback,
         *,
         name: str,
-        aliases: Sequence[str],
+        aliases: Collection[str],
         brief: Optional[str] = None,
         description: Optional[str] = None,
+        usage: Optional[str] = None,
         **attrs
     ) -> None:
-        self.callback: CommandCallback = callback
         self.error_callback: Optional[ErrorCallback] = None
 
         self.name: str = name
         self.aliases: List[str] = list(aliases)
+        self.usage: Optional[str] = usage
 
         self._brief: Optional[str] = brief
         self._description: Optional[str] = description
 
         self._metadata: Dict[str, Any] = attrs
+
+        super().__init__()
+        self.overload(callback)
+
+    def __str__(self) -> str:
+        return self.qualified_name
+
+    def __repr__(self) -> str:
+        return f'<Command name={self.name!r} brief={self.brief!r}>'
+
+    def __hash__(self) -> int:
+        return hash(self.qualified_name)
+
+    @property
+    def brief(self) -> str:
+        """str: A short description of this command.
+        
+        If no brief is set, the first line of the :attr:`~.Command.description` 
+        is used instead.
+        """
+        if self._brief is not None:
+            return self._brief
+
+        try:
+            return self.description.splitlines()[0]
+        except IndexError:
+            return ''
+
+    @property
+    def description(self) -> str:
+        """str: A detailed description of this command.
+        
+        If no description is set, the command's callback docstring is used instead.
+        If no docstring exists, an empty string is returned.
+        """
+        if self._description is not None:
+            return self._description
+
+        doc = self.callback.__doc__
+        if not doc:
+            return ''
+
+        return inspect.cleandoc(doc)
+
+    @property
+    def qualified_name(self) -> str:
+        """str: The qualified name for this command."""
+        return self.name
+
+    @property
+    def signature(self) -> str:
+        """str: The signature, or "usage string" of this command.
+
+        If :attr:`~.Command.usage` is set, it will be returned.
+        Else, it is automatically generated.
+        """
+        return self.usage or super().signature
 
     def error(self, func: ErrorCallback) -> None:
         """Registers an error handler for this command.
@@ -77,6 +138,38 @@ class Command(Generic[P, R]):
         Function signature should be of ``async (ctx: Context, error: Exception) -> Any``.
         """
         self.error_callback = func
+
+    # Replace `_temporary_dispatch` with an event dispatcher of your choice.
+
+    async def execute(self, ctx: Context, content: str) -> None:
+        """|coro|
+
+        Parses and executes this command with the given context and argument content.
+
+        .. note::
+            The prefix and command must be removed from content before-hand.
+
+        Parameters
+        ----------
+        ctx: :class:`~.Context`
+            The context to invoke this command with.
+        content: str
+            The content of the arguments to parse.
+        """
+        try:
+            ctx.callback, _, _ = await self._parse(content, ctx=ctx)
+        except Exception as exc:
+            if self.error_callback:
+                try:
+                    await self.error_callback(ctx, exc)
+                except Exception as new_exc:
+                    exc = new_exc
+                else:
+                    return
+
+            _temporary_dispatch('command_error', ctx, exc)
+        else:
+            await ctx.reinvoke()
 
     async def invoke(self, ctx: Context, /, *args: P.args, **kwargs: P.kwargs) -> None:
         """|coro|
@@ -92,10 +185,9 @@ class Command(Generic[P, R]):
         **kwargs
             The keyword arguments to pass into the callback.
         """
-        # Replace `_temporary_dispatch` with an event dispatcher of your choice.
         try:
             _temporary_dispatch('command', ctx)
-            await self.callback(ctx, *args, **kwargs)
+            await ctx.callback(ctx, *args, **kwargs)
         except Exception as exc:
             if self.error_callback:
                 try:
@@ -117,18 +209,44 @@ class Context:
 
     Attributes
     ----------
+    bot: :class:`~.Bot`
+        The bot that created this context.
+    message: :class:`~.Message`
+        The message that invoked this context.
+    prefix: str
+        The prefix used to invoke this command.
+        Could be, but rarely is ``None``.
+    invoked_with: str
+        The command name used to invoke this command.
+        This could be used to determine which alias invoked this command.
+        Could be ``None``.
     command: :class:`~.Command`
         The command invoked. Could be ``None``.
+    callback: Callable
+        The parsed command callback that will be used. Could be ``None``.
     args: tuple
         The arguments used to invoke this command. Could be ``None``.
     kwargs: Dict[str, Any]
         The keyword arguments used to invoke this command. Could be ``None``.
+    reader: :class:`~.StringReader`
+        The string-reader that was used to parse this command. Could be ``None``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, bot: Bot, message: Message) -> None:
+        self.bot: Bot = bot
+        self.message: Message = message
+
+        self.prefix: Optional[str] = None
+        self.invoked_with: Optional[str] = None
+
         self.command: Optional[Command] = None
+        self.callback: Optional[CommandCallback] = None
         self.args: Optional[Tuple[P.args, ...]] = None
         self.kwargs: Optional[Dict[str, P.kwargs]] = None
+        self.reader: Optional[StringReader] = None
+
+    def __repr__(self) -> str:
+        return f'<Context command={self.command!r}>'
 
     async def invoke(self, command: Command[P, Any], /, *args: P.args, **kwargs: P.kwargs) -> None:
         """|coro|
