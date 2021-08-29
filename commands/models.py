@@ -33,6 +33,11 @@ if TYPE_CHECKING:
 else:
     P = TypeVar('P')
 
+__all__ = (
+    'Command',
+    'Context',
+)
+
 
 class Command(Parser, Generic[P, R]):
     """Represents a command.

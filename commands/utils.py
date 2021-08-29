@@ -15,7 +15,7 @@ R = TypeVar('R')
 
 __all__ = (
     'ensure_async',
-    'to_error_string'
+    'to_error_string',
 )
 
 

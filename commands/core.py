@@ -35,6 +35,12 @@ if TYPE_CHECKING:
     FunctionPrefixT = Callable[['Bot', Message], Awaitable[BasePrefixT]]
     PrefixT = Union[BasePrefixT, FunctionPrefixT]
 
+__all__ = (
+    'CaseInsensitiveDict',
+    'CommandSink',
+    'Bot',
+)
+
 
 class CaseInsensitiveDict(Dict[str, V]):
     """Represents a case-insensitive dictionary."""

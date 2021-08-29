@@ -8,7 +8,20 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from itertools import chain
 
-from typing import Generic, List, Literal, Union, TypeVar, TYPE_CHECKING
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Tuple,
+    Type,
+    TYPE_CHECKING,
+    Union,
+    overload,
+)
 
 from .errors import *
 from .utils import ensure_async
@@ -19,7 +32,6 @@ LiteralT = TypeVar('LiteralT')
 NotT = TypeVar('NotT')
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Dict, Iterable, Tuple, Type, overload
     from .models import Context
 
     ArgumentPrepareT = Callable[[str], str]
