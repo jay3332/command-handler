@@ -241,8 +241,8 @@ class Context:
 
         self.command: Optional[Command] = None
         self.callback: Optional[CommandCallback] = None
-        self.args: Optional[Tuple[P.args, ...]] = None
-        self.kwargs: Optional[Dict[str, P.kwargs]] = None
+        self.args: Optional[tuple] = None
+        self.kwargs: Optional[Dict[str, Any]] = None
         self.reader: Optional[StringReader] = None
 
     def __repr__(self) -> str:

@@ -515,6 +515,7 @@ class Argument:
 
         self._param_key: Optional[str] = None
         self._param_kwarg_only: bool = False
+        self._param_var_positional: bool = False
 
         self.name: str = name
         self.description: str = description
@@ -569,6 +570,9 @@ class Argument:
         def finalize(argument: ArgumentT) -> ArgumentT:
             if param.kind is param.KEYWORD_ONLY:
                 argument._param_kwarg_only = True
+
+            if param.kind is param.VAR_POSITIONAL:
+                argument._param_var_positional = True
 
             argument._param_key = store = param.name
             if not argument.name:
@@ -782,6 +786,8 @@ class _Subparser:
         def append_value(argument: Argument, value: Any) -> None:
             if argument._param_kwarg_only:
                 kwargs[argument._param_key] = value
+            elif argument._param_var_positional:
+                args.extend(value)
             else:
                 args.append(value)
 

@@ -10,6 +10,7 @@ from typing import (
     Dict,
     Generator,
     List,
+    Optional,
     overload,
     Type,
     TYPE_CHECKING,
