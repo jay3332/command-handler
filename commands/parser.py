@@ -841,14 +841,13 @@ class _Subparser:
             else:
                 append_value(argument, word)
 
-        if i < len(self._arguments):
-            for argument in self._arguments[i:]:
-                if argument.default is not _NULL:
-                    append_value(argument, argument.default)
-                elif argument.optional:
-                    append_value(argument, None)
-                else:
-                    raise MissingArgumentError(ctx, argument)
+        for argument in self._arguments[i:]:
+            if argument.default is not _NULL:
+                append_value(argument, argument.default)
+            elif argument.optional:
+                append_value(argument, None)
+            else:
+                raise MissingArgumentError(ctx, argument)
 
         return args, kwargs
 
